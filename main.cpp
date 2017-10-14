@@ -7,7 +7,7 @@ using namespace cv;
 #include <vector>
 using namespace std;
 
-#define DRAW SHOW_ALL
+#define DRAW NO_SHOW
 #define SHOW_ALL 1
 #define NO_SHOW 0
 #define PI 3.1415926535898
@@ -41,11 +41,17 @@ class Armor
         int R_MIN_THRESHOLD;
         int FLOOD_LOWER;
         int FLOOD_UPPER;
+        int CIRCLE_ROI_WIDTH;
+        int CIRCLE_ROI_HEIGHT;
+        int CIRCLE_THRESHOLD;
+        
 
     private:
         cv::Mat hsv;
         cv::Mat s_low;
         cv::Mat s_canny;
+        cv::Mat v_very_high;
+        cv::Mat gray;
 #if DRAW == SHOW_ALL
         cv::Mat light_draw;
 #endif
@@ -65,22 +71,30 @@ class Armor
     private:
         void getSrcSize(cv::Mat& src);
         void cvtHSV(cv::Mat& src);
+        void cvtGray(cv::Mat& src);
         void getLightRegion();
         void getLightRegion2();
         void selectContours();
         bool isAreaTooBigOrSmall(int i);
         void getRotatedRect(int i);
         bool isCloseToBorder();
-        bool isNoBlueNearby(int i);
+        bool isBlueNearby(int i);
         void pushLights();
+#if DRAW == SHOW_ALL
         void drawLights();
+#endif
         void selectLights();
+        void chooseCloseTarget();
+        bool isCircleAround(int midx, int midy);
         void cleanAll();
 
     public:
         Armor();
         void init();
         void feedImage(cv::Mat& src);
+        bool isFound();
+        int getTargetX();
+        int getTargetY();
 };
 
 Armor::Armor():
@@ -97,7 +111,7 @@ Armor::Armor():
     H_BLUE_HIGH_THRESHOLD(180),
     H_BLUE_HIGH_THRESHOLD_MAX(200),
     H_BLUE_HIGH_THRESHOLD_MIN(160),
-    H_BLUE_STEP(5),
+    H_BLUE_STEP(1),
     H_BLUE_CHANGE_THRESHOLD_LOW(5),
     H_BLUE_CHANGE_THRESHOLD_HIGH(10),
     S_BLUE_THRESHOLD(100),
@@ -105,7 +119,11 @@ Armor::Armor():
     R_MAX_THRESHOLD(15),
     R_MIN_THRESHOLD(5),
     FLOOD_LOWER(8),
-    FLOOD_UPPER(8)
+    FLOOD_UPPER(8),
+    CIRCLE_ROI_WIDTH(40),
+    CIRCLE_ROI_HEIGHT(40),
+    CIRCLE_THRESHOLD(80),
+    target(Point(320,240))
 {
 }
 
@@ -125,11 +143,13 @@ void Armor::feedImage(cv::Mat& src)
     cleanAll();
     getSrcSize(src);
     cvtHSV(src);
+    cvtGray(src);
     getLightRegion();
-    findContours(hsvSplit[V_INDEX], V_contours,
+    findContours(v_very_high, V_contours,
             CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
     selectContours(); 
     selectLights();
+    chooseCloseTarget();
 }
 
 void Armor::getSrcSize(cv::Mat& src)
@@ -144,19 +164,23 @@ void Armor::cvtHSV(cv::Mat& src)
     cv::split(hsv, hsvSplit);
 }
 
+void Armor::cvtGray(cv::Mat& src)
+{
+    cv::cvtColor(src, gray, CV_BGR2GRAY);
+}
 void Armor::getLightRegion()
 {
-    cv::threshold(hsvSplit[V_INDEX], hsvSplit[V_INDEX],
+    cv::threshold(hsvSplit[V_INDEX], v_very_high,
             V_THRESHOLD, U8_MAX, THRESH_BINARY);
     cv::threshold(hsvSplit[S_INDEX], s_low,
             S_THRESHOLD, U8_MAX, THRESH_BINARY_INV);
-    bitwise_and(s_low, hsvSplit[V_INDEX], hsvSplit[V_INDEX]);
-    cv::erode(hsvSplit[V_INDEX], hsvSplit[V_INDEX], V_element_erode);
-    cv::dilate(hsvSplit[V_INDEX], hsvSplit[V_INDEX], V_element_dilate);
+    bitwise_and(s_low, v_very_high, v_very_high);
+    cv::erode(v_very_high, v_very_high, V_element_erode);
+    cv::dilate(v_very_high, v_very_high, V_element_dilate);
 #if DRAW == SHOW_ALL
     cv::namedWindow("light region",1);
-    cv::imshow("light region", hsvSplit[V_INDEX]);
-    cv::imshow("S region", hsvSplit[S_INDEX]);
+    cv::imshow("light region", v_very_high);
+    //cv::imshow("S region", s_low);
     cv::createTrackbar("V_THRESHOLD", "light region", &V_THRESHOLD, U8_MAX);
     cv::createTrackbar("S_THRESHOLD", "light region", &S_THRESHOLD, U8_MAX);
     cv::waitKey(1);
@@ -187,7 +211,7 @@ void Armor::selectContours()
             getRotatedRect(i);
             if(isCloseToBorder())
                 continue;
-            if(isNoBlueNearby(i))
+            if(!isBlueNearby(i))
                 continue;
             pushLights();
 #if DRAW == SHOW_ALL
@@ -218,7 +242,7 @@ bool Armor::isCloseToBorder()
 
 }
 
-bool Armor::isNoBlueNearby(int i)
+bool Armor::isBlueNearby(int i)
 {
     int blue_pixel_cnt = 0;
     uchar pixel = 0;
@@ -255,7 +279,7 @@ bool Armor::isNoBlueNearby(int i)
             H_BLUE_HIGH_THRESHOLD += H_BLUE_STEP;
     }
     //cout << "blue cnt:" << blue_pixel_cnt << "/size" << V_contours[i].size() << endl;
-    return float(blue_pixel_cnt)/V_contours[i].size()*100 < BLUE_PIXEL_RATIO_THRESHOLD;
+    return float(blue_pixel_cnt)/V_contours[i].size()*100 > BLUE_PIXEL_RATIO_THRESHOLD;
 }
 
 void Armor::pushLights()
@@ -263,6 +287,7 @@ void Armor::pushLights()
     lights.push_back(rotated_rect);
 }
 
+#if DRAW == SHOW_ALL
 void Armor::drawLights()
 {
     Point2f vertices[4];
@@ -275,14 +300,10 @@ void Armor::drawLights()
     cv::waitKey(1);
 
 }
+#endif
 
 void Armor::selectLights()
 {
-    /*
-    uchar *data = NULL;
-    float r_real = 0;
-    unsigned int circle_point_cnt = 0;
-    */
     if (lights.size() > 1)
     {
         for (int i = 0; i < (int)lights.size() - 1; i++)
@@ -310,58 +331,14 @@ void Armor::selectLights()
                     angelj += 90;
                 double doti = abs(cos(angeli * PI / 180) * (pi.x - pj.x) + sin(angeli * PI / 180) * (pi.y - pj.y)) / distance;
                 double dotj = abs(cos(angelj * PI / 180) * (pi.x - pj.x) + sin(angelj * PI / 180) * (pi.y - pj.y)) / distance;
-                if (doti > 0.9 || dotj > 0.9)
+                if (doti > 1.5 || dotj > 1.5)
                     continue;
-                /*
-                cv::Canny(hsvSplit[S_INDEX], s_canny, 300, 600);
-                imshow("circle", s_canny);
-                cv::createTrackbar("R_MAX_THRESHOLD", "circle", &R_MAX_THRESHOLD, U8_MAX);
-                cv::createTrackbar("R_MIN_THRESHOLD", "circle", &R_MIN_THRESHOLD, U8_MAX);
-                for(int row=0; row<srcH; ++row)
-                {
-                    data = s_canny.ptr<uchar>(row);
-                    for(int col=0; col<srcW; ++col, ++data)
-                    {
-                        if(*data)
-                        {
-                            r_real = sqrt((midx - col) * (midx - col) + (midy - row) * (midy - row));
-                            if(R_MIN_THRESHOLD< r_real && r_real < R_MAX_THRESHOLD)
-                            {
-                                cout << "R: " << r_real << endl;
-                                ++circle_point_cnt;
-                            }
-                        }
-                    }
-                }
-                cout << "cnt: " << circle_point_cnt << endl;
-                cv::Rect rect_center;
-                cv::floodFill(hsvSplit[S_INDEX], Point((int)midx, (int)midy),
-                        cv::Scalar(255), &rect_center, cv::Scalar(FLOOD_LOWER), cv::Scalar(FLOOD_UPPER));
-                cv::rectangle(light_draw, rect_center, cv::Scalar(255, 0, 0), 2);
-                cout << "Rect x: " << rect_center.x << " y: " << rect_center.y << endl;
-                */
+                if(!isCircleAround(midx, midy))
+                    continue;
+
                 armors.push_back(Point((int)midx, (int)midy));
             }
         }
-        int closest_x = 0, closest_y = 0;
-        int distance_armor_center = 0;
-        int distance_last = sqrt(
-                    (closest_x - srcW/2) * (closest_x - srcW/2)
-                    + (closest_y - srcH/2) * (closest_y - srcH/2));
-        for(int i=0; i<(int)armors.size(); ++i)
-        {
-            distance_armor_center = sqrt(
-                    (armors[i].x - srcW/2) * (armors[i].x - srcW/2)
-                    + (armors[i].y - srcH/2) * (armors[i].y - srcH/2));
-            if(distance_armor_center < distance_last)
-            {
-                closest_x = armors[i].x;
-                closest_y = armors[i].y;
-                distance_last = distance_armor_center;
-            }
-        }
-        target.x = closest_x;
-        target.y = closest_y;
     }
 #if DRAW == SHOW_ALL
     //for (int i=0;i<(int)armors.size();i++)
@@ -378,6 +355,66 @@ void Armor::selectLights()
 #endif
 }
 
+void Armor::chooseCloseTarget()
+{
+    if(!armors.empty())
+    {
+        int closest_x = 0, closest_y = 0;
+        int distance_armor_center = 0;
+        int distance_last = sqrt(
+                (closest_x - srcW/2) * (closest_x - srcW/2)
+                + (closest_y - srcH/2) * (closest_y - srcH/2));
+        for(int i=0; i<(int)armors.size(); ++i)
+        {
+            distance_armor_center = sqrt(
+                    (armors[i].x - srcW/2) * (armors[i].x - srcW/2)
+                    + (armors[i].y - srcH/2) * (armors[i].y - srcH/2));
+            if(distance_armor_center < distance_last)
+            {
+                closest_x = armors[i].x;
+                closest_y = armors[i].y;
+                distance_last = distance_armor_center;
+            }
+        }
+        target.x = closest_x;
+        target.y = closest_y;
+    }
+}
+
+bool Armor::isCircleAround(int midx, int midy)
+{
+    Mat roi_circle = gray(
+            cv::Rect(midx - CIRCLE_ROI_WIDTH/2, midy - CIRCLE_ROI_HEIGHT/2,
+                CIRCLE_ROI_WIDTH, CIRCLE_ROI_HEIGHT));
+    vector<vector<Point> > gray_contours;
+    cv::threshold(roi_circle, roi_circle, CIRCLE_THRESHOLD, U8_MAX, THRESH_BINARY);
+    //imshow("roi", roi_circle);
+    cv::findContours(roi_circle, gray_contours, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
+    for(int i= 0; i < (int)gray_contours.size(); i++)
+    {
+        int area= contourArea(gray_contours.at(i));
+        if(area > 50)
+        {
+            Point2f center(320, 240);
+            float radius= 0;
+            cv::minEnclosingCircle(gray_contours[i], center, radius);
+            center.x += midx - CIRCLE_ROI_WIDTH/2;
+            center.y += midy - CIRCLE_ROI_HEIGHT/2;
+            int area= contourArea(gray_contours[i], false);
+            float circleArea= PI * radius * radius;
+            float r= area / circleArea;
+            if(r > 0.7)
+            {
+#if DRAW == SHOW_ALL
+                cv::circle(light_draw, center, radius, Scalar(0, 255, 255), 2);
+#endif
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void Armor::cleanAll()
 {
     V_contours.clear();
@@ -385,9 +422,24 @@ void Armor::cleanAll()
     armors.clear();
 }
 
+bool Armor::isFound()
+{
+    return !armors.empty();
+}
+
+int Armor::getTargetX()
+{
+    return target.x;
+}
+
+int Armor::getTargetY()
+{
+    return target.y;
+}
+
 int main(void)
 {
-	//cv::VideoCapture cap(1);
+    //cv::VideoCapture cap(1);
     cv::VideoCapture cap("/home/jachinshen/视频/Robo/BlueArmor2.avi"); 
     Mat src;
     Armor armor;
@@ -395,80 +447,16 @@ int main(void)
     cap.read(src);
     imshow("frame", src);
     waitKey(0);
-    
+
     armor.init();
     while(cap.read(src))	
     {
         armor.feedImage(src);
+        cout << "x:" << armor.getTargetX()
+            << " y:" << armor.getTargetY() << endl;
 
         imshow("frame", src);
-        waitKey(0);
+        waitKey(1);
     }
     cap.release();
 }
-        /*
-        GaussianBlur(hsvSplit[2], hsvSplit[2], Size(9, 9), 0);
-        minMaxLoc(hsvSplit[2], NULL, &V_max_value, NULL, &V_max_loc); 
-        threshold(hsvSplit[2], hsvSplit[2], V_thresh_ratio * V_max_value, 255, THRESH_BINARY);
-        erode(hsvSplit[2], hsvSplit[2], V_element_erode);
-        dilate(hsvSplit[2], hsvSplit[2], V_element_dilate);
-        imshow("V", hsvSplit[2]);
-        //findContours(hsvSplit[2], V_contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
-        //cout << countNonZero(hsvSplit[2]) << endl;
-        //cout << V_contours.size() << endl;
-
-        
-        threshold(hsvSplit[1], hsvSplit[1], 30, 255, THRESH_BINARY_INV);
-        imshow("S", hsvSplit[1]);
-        
-        bitwise_and(hsvSplit[1], hsvSplit[2], light_blue);
-        imshow("light_blue", light_blue);
-        findContours(light_blue, S_contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
-        cout << S_contours.size() << endl;
-        */
-
-        /*
-        GaussianBlur(hsvSplit[2], hsvSplit[2], Size(7, 7), 0);
-        threshold(hsvSplit[2], hsvSplit[2], 230, 255, THRESH_BINARY);
-        imshow("V", hsvSplit[2]);
-
-        findContours(hsvSplit[2], S_contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
-        for(int i=0; i < (int)S_contours.size(); ++i)
-        {
-            bounding_rect = boundingRect(S_contours[i]);
-            Mat roi = src(bounding_rect);
-            Scalar bgr_mean = mean(roi);
-            cout<< i<<" "<<bgr_mean<<endl;
-        }
-
-        GaussianBlur(hsvSplit[0], hsvSplit[0], Size(9, 9), 0);
-        threshold(hsvSplit[0], h_low, H_LOW_THRESHOLD, 255, THRESH_BINARY);
-        threshold(hsvSplit[0], h_high, H_HIGH_THRESHOLD, 255, THRESH_BINARY_INV);
-        bitwise_and(h_low, h_high, hsvSplit[0]);
-        imshow("H", hsvSplit[0]);
-        //imshow("light_blue", light_blue);
-        */
-        //minMaxLoc(hsvSplit[1], &S_min_value, &S_max_value, NULL, NULL); 
-        //adaptiveThreshold(hsvSplit[1], hsvSplit[1], 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY, 9, -60);
-        /*
-        try
-        {
-            //Canny(hsvSplit[1], hsvSplit[1], canny_threshold_1*100.0, canny_threshold_2, 7);
-            adaptiveThreshold(hsvSplit[1], hsvSplit[1], 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY, 9, -adaptive_C);
-            imshow("S", hsvSplit[1]);
-            //createTrackbar("canny_threshold_1", "S", &canny_threshold_1, 30000);
-            //createTrackbar("canny_threshold_2", "S", &canny_threshold_2, 500);
-            createTrackbar("adaptive_C", "S", &adaptive_C, 500);
-            findContours(hsvSplit[1], S_contours, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
-            drawContours(src, S_contours, -1, Scalar(0,255,0));
-
-            imshow("frame", src);
-            waitKey(0);
-        }
-        catch( cv::Exception& e )
-        {
-            cout << "Error: " << e.what() << endl;
-        }
-        */
-
-
