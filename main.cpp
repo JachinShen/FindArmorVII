@@ -12,6 +12,7 @@ using namespace std;
 #define NO_SHOW 0
 #define PI 3.1415926535898
 #define V_INDEX 2
+#define S_INDEX 1
 #define H_INDEX 0
 #define U8_MAX 255
 
@@ -23,11 +24,28 @@ class Armor
         int ERODE_KSIZE;
         int DILATE_KSIZE;
         int V_THRESHOLD;
+        int S_THRESHOLD;
         int BORDER_THRESHOLD;
         int H_BLUE_LOW_THRESHOLD;
+        int H_BLUE_LOW_THRESHOLD_MIN;
+        int H_BLUE_LOW_THRESHOLD_MAX;
         int H_BLUE_HIGH_THRESHOLD;
+        int H_BLUE_HIGH_THRESHOLD_MAX;
+        int H_BLUE_HIGH_THRESHOLD_MIN;
+        int H_BLUE_STEP;
+        int H_BLUE_CHANGE_THRESHOLD_LOW;
+        int H_BLUE_CHANGE_THRESHOLD_HIGH;
+        int S_BLUE_THRESHOLD;
+        int BLUE_PIXEL_RATIO_THRESHOLD;
+        int R_MAX_THRESHOLD;
+        int R_MIN_THRESHOLD;
+        int FLOOD_LOWER;
+        int FLOOD_UPPER;
+
     private:
         cv::Mat hsv;
+        cv::Mat s_low;
+        cv::Mat s_canny;
 #if DRAW == SHOW_ALL
         cv::Mat light_draw;
 #endif
@@ -40,13 +58,15 @@ class Armor
         cv::Mat V_element_erode;
         cv::Mat V_element_dilate;
 
-        RotatedRect rotated_rect;
+        cv::RotatedRect rotated_rect;
         int srcH, srcW;
+        cv::Point target;
 
     private:
         void getSrcSize(cv::Mat& src);
         void cvtHSV(cv::Mat& src);
         void getLightRegion();
+        void getLightRegion2();
         void selectContours();
         bool isAreaTooBigOrSmall(int i);
         void getRotatedRect(int i);
@@ -60,18 +80,32 @@ class Armor
     public:
         Armor();
         void init();
-        void setImage(cv::Mat& src);
+        void feedImage(cv::Mat& src);
 };
 
 Armor::Armor():
     AREA_MAX(200),
     AREA_MIN(25),
-    ERODE_KSIZE(3),
+    ERODE_KSIZE(2),
     DILATE_KSIZE(4),
-    V_THRESHOLD(220),
+    V_THRESHOLD(230),
+    S_THRESHOLD(40),
     BORDER_THRESHOLD(10),
-    H_BLUE_LOW_THRESHOLD(130),
-    H_BLUE_HIGH_THRESHOLD(180)
+    H_BLUE_LOW_THRESHOLD(120),
+    H_BLUE_LOW_THRESHOLD_MIN(100),
+    H_BLUE_LOW_THRESHOLD_MAX(140),
+    H_BLUE_HIGH_THRESHOLD(180),
+    H_BLUE_HIGH_THRESHOLD_MAX(200),
+    H_BLUE_HIGH_THRESHOLD_MIN(160),
+    H_BLUE_STEP(5),
+    H_BLUE_CHANGE_THRESHOLD_LOW(5),
+    H_BLUE_CHANGE_THRESHOLD_HIGH(10),
+    S_BLUE_THRESHOLD(100),
+    BLUE_PIXEL_RATIO_THRESHOLD(12),
+    R_MAX_THRESHOLD(15),
+    R_MIN_THRESHOLD(5),
+    FLOOD_LOWER(8),
+    FLOOD_UPPER(8)
 {
 }
 
@@ -83,7 +117,7 @@ void Armor::init()
             MORPH_CROSS, Size(DILATE_KSIZE, DILATE_KSIZE));
 }
 
-void Armor::setImage(cv::Mat& src)
+void Armor::feedImage(cv::Mat& src)
 {
 #if DRAW == SHOW_ALL
     light_draw = src.clone();
@@ -93,7 +127,7 @@ void Armor::setImage(cv::Mat& src)
     cvtHSV(src);
     getLightRegion();
     findContours(hsvSplit[V_INDEX], V_contours,
-            CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
+            CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
     selectContours(); 
     selectLights();
 }
@@ -114,13 +148,34 @@ void Armor::getLightRegion()
 {
     cv::threshold(hsvSplit[V_INDEX], hsvSplit[V_INDEX],
             V_THRESHOLD, U8_MAX, THRESH_BINARY);
+    cv::threshold(hsvSplit[S_INDEX], s_low,
+            S_THRESHOLD, U8_MAX, THRESH_BINARY_INV);
+    bitwise_and(s_low, hsvSplit[V_INDEX], hsvSplit[V_INDEX]);
     cv::erode(hsvSplit[V_INDEX], hsvSplit[V_INDEX], V_element_erode);
     cv::dilate(hsvSplit[V_INDEX], hsvSplit[V_INDEX], V_element_dilate);
 #if DRAW == SHOW_ALL
     cv::namedWindow("light region",1);
     cv::imshow("light region", hsvSplit[V_INDEX]);
+    cv::imshow("S region", hsvSplit[S_INDEX]);
+    cv::createTrackbar("V_THRESHOLD", "light region", &V_THRESHOLD, U8_MAX);
+    cv::createTrackbar("S_THRESHOLD", "light region", &S_THRESHOLD, U8_MAX);
     cv::waitKey(1);
 #endif
+}
+
+void Armor::getLightRegion2()
+{
+    cv::Canny(hsvSplit[S_INDEX], hsvSplit[S_INDEX], 400, 1000);
+    cv::threshold(hsvSplit[V_INDEX], hsvSplit[V_INDEX],
+            V_THRESHOLD, U8_MAX, THRESH_BINARY);
+    cv::dilate(hsvSplit[V_INDEX], hsvSplit[V_INDEX], V_element_dilate);
+    bitwise_and(hsvSplit[S_INDEX], hsvSplit[V_INDEX], hsvSplit[V_INDEX]);
+#if DRAW == SHOW_ALL
+    cv::namedWindow("light region",1);
+    cv::imshow("light region", hsvSplit[V_INDEX]);
+    cv::waitKey(1);
+#endif
+
 }
 
 void Armor::selectContours()
@@ -140,6 +195,7 @@ void Armor::selectContours()
 #endif
         }
 }
+
 
 bool Armor::isAreaTooBigOrSmall(int i)
 {
@@ -164,14 +220,42 @@ bool Armor::isCloseToBorder()
 
 bool Armor::isNoBlueNearby(int i)
 {
-    int H_sum = 0;
+    int blue_pixel_cnt = 0;
+    uchar pixel = 0;
+    uchar pixel_min = H_BLUE_LOW_THRESHOLD_MAX;
+    uchar pixel_max = H_BLUE_HIGH_THRESHOLD_MIN;
+    uchar pixel_S_select = 0;
     for(int j=0; j < (int)V_contours[i].size(); ++j)
     {
-        H_sum += *(hsvSplit[H_INDEX].ptr(V_contours[i][j].y) + V_contours[i][j].x);
+        pixel_S_select = *(hsvSplit[S_INDEX].ptr<uchar>(V_contours[i][j].y) + V_contours[i][j].x);
+        pixel = *(hsvSplit[H_INDEX].ptr<uchar>(V_contours[i][j].y) + V_contours[i][j].x);
+        if(pixel_S_select > S_BLUE_THRESHOLD && pixel < H_BLUE_HIGH_THRESHOLD && pixel > H_BLUE_LOW_THRESHOLD)
+        {
+            //cout << "pixel S:" << (int)pixel_S_select << " blue:" << (int)pixel << endl;
+            if(pixel > pixel_max)
+                pixel_max = pixel;
+            if(pixel < pixel_min)
+                pixel_min = pixel;
+            ++blue_pixel_cnt;
+        }
     }
-    float H_avg = H_sum / V_contours[i].size();
-    //cout << "H avg:"<<H_avg<<endl;
-    return (H_avg > H_BLUE_HIGH_THRESHOLD || H_avg < H_BLUE_LOW_THRESHOLD);
+    if( blue_pixel_cnt > 5 )
+    {
+        pixel_max = pixel_max < H_BLUE_HIGH_THRESHOLD_MAX ? pixel_max:H_BLUE_HIGH_THRESHOLD_MAX;
+        pixel_max = pixel_max > H_BLUE_HIGH_THRESHOLD_MIN ? pixel_max:H_BLUE_HIGH_THRESHOLD_MIN;
+        pixel_min = pixel_min > H_BLUE_LOW_THRESHOLD_MIN ? pixel_min:H_BLUE_LOW_THRESHOLD_MIN;
+        pixel_min = pixel_min < H_BLUE_LOW_THRESHOLD_MAX ? pixel_min:H_BLUE_LOW_THRESHOLD_MAX;
+        if(pixel_min > H_BLUE_LOW_THRESHOLD + H_BLUE_CHANGE_THRESHOLD_HIGH)
+            H_BLUE_LOW_THRESHOLD += H_BLUE_STEP;
+        if(pixel_min < H_BLUE_LOW_THRESHOLD + H_BLUE_CHANGE_THRESHOLD_LOW)
+            H_BLUE_LOW_THRESHOLD -= H_BLUE_STEP;
+        if(pixel_max < H_BLUE_HIGH_THRESHOLD - H_BLUE_CHANGE_THRESHOLD_HIGH)
+            H_BLUE_HIGH_THRESHOLD -= H_BLUE_STEP;
+        if(pixel_max > H_BLUE_HIGH_THRESHOLD - H_BLUE_CHANGE_THRESHOLD_LOW)
+            H_BLUE_HIGH_THRESHOLD += H_BLUE_STEP;
+    }
+    //cout << "blue cnt:" << blue_pixel_cnt << "/size" << V_contours[i].size() << endl;
+    return float(blue_pixel_cnt)/V_contours[i].size()*100 < BLUE_PIXEL_RATIO_THRESHOLD;
 }
 
 void Armor::pushLights()
@@ -194,6 +278,11 @@ void Armor::drawLights()
 
 void Armor::selectLights()
 {
+    /*
+    uchar *data = NULL;
+    float r_real = 0;
+    unsigned int circle_point_cnt = 0;
+    */
     if (lights.size() > 1)
     {
         for (int i = 0; i < (int)lights.size() - 1; i++)
@@ -210,7 +299,7 @@ void Armor::selectLights()
                 //                double b=sizei.height<sizei.width?sizei.height:sizei.width;
                 double distance = sqrt((pi.x - pj.x) * (pi.x - pj.x) + (pi.y - pj.y) * (pi.y - pj.y));
                 //灯条距离合适
-                if (distance < 3 * ai || distance > 4.5 * ai)
+                if (distance < 1.5 * ai || distance > 7.5 * ai)
                     continue;
                 //灯条中点连线与灯条夹角合适
                 double angeli = lights.at(i).angle;
@@ -221,18 +310,70 @@ void Armor::selectLights()
                     angelj += 90;
                 double doti = abs(cos(angeli * PI / 180) * (pi.x - pj.x) + sin(angeli * PI / 180) * (pi.y - pj.y)) / distance;
                 double dotj = abs(cos(angelj * PI / 180) * (pi.x - pj.x) + sin(angelj * PI / 180) * (pi.y - pj.y)) / distance;
-                if (doti > 0.3 || dotj > 0.3)
+                if (doti > 0.9 || dotj > 0.9)
                     continue;
+                /*
+                cv::Canny(hsvSplit[S_INDEX], s_canny, 300, 600);
+                imshow("circle", s_canny);
+                cv::createTrackbar("R_MAX_THRESHOLD", "circle", &R_MAX_THRESHOLD, U8_MAX);
+                cv::createTrackbar("R_MIN_THRESHOLD", "circle", &R_MIN_THRESHOLD, U8_MAX);
+                for(int row=0; row<srcH; ++row)
+                {
+                    data = s_canny.ptr<uchar>(row);
+                    for(int col=0; col<srcW; ++col, ++data)
+                    {
+                        if(*data)
+                        {
+                            r_real = sqrt((midx - col) * (midx - col) + (midy - row) * (midy - row));
+                            if(R_MIN_THRESHOLD< r_real && r_real < R_MAX_THRESHOLD)
+                            {
+                                cout << "R: " << r_real << endl;
+                                ++circle_point_cnt;
+                            }
+                        }
+                    }
+                }
+                cout << "cnt: " << circle_point_cnt << endl;
+                cv::Rect rect_center;
+                cv::floodFill(hsvSplit[S_INDEX], Point((int)midx, (int)midy),
+                        cv::Scalar(255), &rect_center, cv::Scalar(FLOOD_LOWER), cv::Scalar(FLOOD_UPPER));
+                cv::rectangle(light_draw, rect_center, cv::Scalar(255, 0, 0), 2);
+                cout << "Rect x: " << rect_center.x << " y: " << rect_center.y << endl;
+                */
                 armors.push_back(Point((int)midx, (int)midy));
             }
         }
+        int closest_x = 0, closest_y = 0;
+        int distance_armor_center = 0;
+        int distance_last = sqrt(
+                    (closest_x - srcW/2) * (closest_x - srcW/2)
+                    + (closest_y - srcH/2) * (closest_y - srcH/2));
+        for(int i=0; i<(int)armors.size(); ++i)
+        {
+            distance_armor_center = sqrt(
+                    (armors[i].x - srcW/2) * (armors[i].x - srcW/2)
+                    + (armors[i].y - srcH/2) * (armors[i].y - srcH/2));
+            if(distance_armor_center < distance_last)
+            {
+                closest_x = armors[i].x;
+                closest_y = armors[i].y;
+                distance_last = distance_armor_center;
+            }
+        }
+        target.x = closest_x;
+        target.y = closest_y;
     }
 #if DRAW == SHOW_ALL
-    for (int i=0;i<(int)armors.size();i++)
+    //for (int i=0;i<(int)armors.size();i++)
     {
-        circle(light_draw, armors.at(i), 4, cv::Scalar(0,0,255), -1);
+        circle(light_draw, target, 3, cv::Scalar(0,0,255), -1);
     }
     imshow("draw", light_draw);
+    cv::createTrackbar("H_BLUE_LOW_THRESHOLD", "draw", &H_BLUE_LOW_THRESHOLD, U8_MAX);
+    cv::createTrackbar("H_BLUE_HIGH_THRESHOLD", "draw", &H_BLUE_HIGH_THRESHOLD, U8_MAX);
+    cv::createTrackbar("S_BLUE_THRESHOLD", "draw", &S_BLUE_THRESHOLD, U8_MAX);
+    cv::createTrackbar("BLUE_PIXEL_RATIO_THRESHOLD", "draw", &BLUE_PIXEL_RATIO_THRESHOLD, 100);
+
     cv::waitKey(1);
 #endif
 }
@@ -246,7 +387,8 @@ void Armor::cleanAll()
 
 int main(void)
 {
-    cv::VideoCapture cap("/home/jachinshen/Projects/Cpp/Opencv/FindArmorVI/real_light.avi"); 
+	//cv::VideoCapture cap(1);
+    cv::VideoCapture cap("/home/jachinshen/视频/Robo/BlueArmor2.avi"); 
     Mat src;
     Armor armor;
     cv::namedWindow("frame", 1); 
@@ -257,7 +399,7 @@ int main(void)
     armor.init();
     while(cap.read(src))	
     {
-        armor.setImage(src);
+        armor.feedImage(src);
 
         imshow("frame", src);
         waitKey(0);
