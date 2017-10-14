@@ -11,6 +11,7 @@ SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall")
 # Declare the target (an executable)
 include_directories( ${PROJECT_SOURCE_DIR}/include)
 ADD_EXECUTABLE(FindArmor  
-  ./main.cpp)
+    ${PROJECT_SOURCE_DIR}/src/main.cpp
+    ${PROJECT_SOURCE_DIR}/src/Armor.cpp)
 TARGET_LINK_LIBRARIES(FindArmor ${OpenCV_LIBS})
 #MESSAGE(STATUS "OpenCV_LIBS: ${OpenCV_LIBS}")     
