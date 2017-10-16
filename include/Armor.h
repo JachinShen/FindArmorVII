@@ -3,6 +3,10 @@
 #include <opencv2/highgui/highgui.hpp>
 using namespace cv;
 
+#include <iostream>
+#include <vector>
+using namespace std;
+
 #define SHOW_ALL 1
 #define NO_SHOW 0
 #define PI 3.1415926535898
@@ -32,13 +36,11 @@ class Armor
         int H_BLUE_CHANGE_THRESHOLD_HIGH;
         int S_BLUE_THRESHOLD;
         int BLUE_PIXEL_RATIO_THRESHOLD;
-        int R_MAX_THRESHOLD;
-        int R_MIN_THRESHOLD;
-        int FLOOD_LOWER;
-        int FLOOD_UPPER;
         int CIRCLE_ROI_WIDTH;
         int CIRCLE_ROI_HEIGHT;
         int CIRCLE_THRESHOLD;
+        int CIRCLE_AREA_THRESH_MAX;
+        int CIRCLE_AREA_THRESH_MIN;
         bool DRAW;
         
 
@@ -52,7 +54,7 @@ class Armor
 
         std::vector<cv::Mat > hsvSplit;
         std::vector<cv::RotatedRect> lights;
-        std::vector<cv::Point > armors;
+        std::vector<cv::Point2f > armors;
         std::vector<std::vector<cv::Point > > V_contours;
 
         cv::Mat V_element_erode;

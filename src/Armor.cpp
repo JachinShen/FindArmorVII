@@ -19,13 +19,9 @@ Armor::Armor():
     H_BLUE_CHANGE_THRESHOLD_HIGH(10),
     S_BLUE_THRESHOLD(100),
     BLUE_PIXEL_RATIO_THRESHOLD(12),
-    R_MAX_THRESHOLD(15),
-    R_MIN_THRESHOLD(5),
-    FLOOD_LOWER(8),
-    FLOOD_UPPER(8),
     CIRCLE_ROI_WIDTH(40),
     CIRCLE_ROI_HEIGHT(40),
-    CIRCLE_THRESHOLD(80),
+    CIRCLE_THRESHOLD(130),
     DRAW(NO_SHOW),
     target(Point(320,240))
 {
@@ -52,7 +48,6 @@ void Armor::feedImage(cv::Mat& src)
             CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
     selectContours(); 
     selectLights();
-    chooseCloseTarget();
 }
 
 void Armor::getSrcSize(cv::Mat& src)
@@ -70,6 +65,8 @@ void Armor::cvtHSV(cv::Mat& src)
 void Armor::cvtGray(cv::Mat& src)
 {
     cv::cvtColor(src, gray, CV_BGR2GRAY);
+    cv::equalizeHist(gray, gray);
+    cv::threshold(gray, gray, CIRCLE_THRESHOLD, U8_MAX, THRESH_BINARY);
 }
 void Armor::getLightRegion()
 {
@@ -222,6 +219,11 @@ void Armor::selectLights()
                 double ai = sizei.height > sizei.width ? sizei.height : sizei.width;
                 //                double b=sizei.height<sizei.width?sizei.height:sizei.width;
                 double distance = sqrt((pi.x - pj.x) * (pi.x - pj.x) + (pi.y - pj.y) * (pi.y - pj.y));
+                
+                CIRCLE_ROI_WIDTH = (int)distance;
+                CIRCLE_ROI_HEIGHT = (int)ai * 1.5;
+                CIRCLE_AREA_THRESH_MAX = PI * distance * distance;
+                CIRCLE_AREA_THRESH_MIN = PI * distance * distance / 4;
                 //灯条距离合适
                 if (distance < 1.5 * ai || distance > 7.5 * ai)
                     continue;
@@ -241,10 +243,10 @@ void Armor::selectLights()
                 if(!isCircleAround(midx, midy))
                     continue;
 
-                armors.push_back(Point((int)midx, (int)midy));
             }
         }
     }
+    chooseCloseTarget();
     if(DRAW == SHOW_ALL)
     {
         //for (int i=0;i<(int)armors.size();i++)
@@ -272,13 +274,15 @@ void Armor::chooseCloseTarget()
                 + (closest_y - srcH/2) * (closest_y - srcH/2));
         for(int i=0; i<(int)armors.size(); ++i)
         {
+            //cout << "x:" << armors[i].x
+                //<< "y:" << armors[i].y << endl;
             distance_armor_center = sqrt(
                     (armors[i].x - srcW/2) * (armors[i].x - srcW/2)
                     + (armors[i].y - srcH/2) * (armors[i].y - srcH/2));
             if(distance_armor_center < distance_last)
             {
-                closest_x = armors[i].x;
-                closest_y = armors[i].y;
+                closest_x = (int)armors[i].x;
+                closest_y = (int)armors[i].y;
                 distance_last = distance_armor_center;
             }
         }
@@ -300,28 +304,36 @@ bool Armor::isCircleAround(int midx, int midy)
                 midy - CIRCLE_ROI_HEIGHT/2,
                 CIRCLE_ROI_WIDTH, CIRCLE_ROI_HEIGHT));
     vector<vector<Point> > gray_contours;
-    cv::threshold(roi_circle, roi_circle, CIRCLE_THRESHOLD, U8_MAX, THRESH_BINARY);
-    //imshow("roi", roi_circle);
-    cv::findContours(roi_circle, gray_contours, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
+    /*
+    cv::imshow("roi", roi_circle);
+    cv::waitKey(0);
+    */
+    cv::findContours(roi_circle.clone(), gray_contours, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
     for(int i= 0; i < (int)gray_contours.size(); i++)
     {
-        int area= contourArea(gray_contours.at(i));
-        if(area > 30)
+        int area= contourArea(gray_contours[i]);
+        /*
+        if(area > CIRCLE_AREA_THRESH_MAX)
+            continue;
+        if(area < CIRCLE_AREA_THRESH_MIN)
+            continue;
+            */
+        if(area < 30)
+            continue;
+        Point2f center(320, 240);
+        float radius= 0;
+        cv::minEnclosingCircle(gray_contours[i], center, radius);
+        center.x += midx - CIRCLE_ROI_WIDTH/2;
+        center.y += midy - CIRCLE_ROI_HEIGHT/2;
+        float circleArea= PI * radius * radius;
+        float r= area / circleArea;
+            //cout << "Circle:" << r << endl;
+        if(r > 0.7)
         {
-            Point2f center(320, 240);
-            float radius= 0;
-            cv::minEnclosingCircle(gray_contours[i], center, radius);
-            center.x += midx - CIRCLE_ROI_WIDTH/2;
-            center.y += midy - CIRCLE_ROI_HEIGHT/2;
-            int area= contourArea(gray_contours[i], false);
-            float circleArea= PI * radius * radius;
-            float r= area / circleArea;
-            if(r > 0.6)
-            {
-                if(DRAW == SHOW_ALL)
-                    cv::circle(light_draw, center, radius, Scalar(0, 255, 255), 2);
-                return true;
-            }
+            if(DRAW == SHOW_ALL)
+                cv::circle(light_draw, center, radius, Scalar(0, 255, 255), 2);
+            armors.push_back(center);
+            return true;
         }
     }
     return false;
