@@ -33,11 +33,30 @@ void Armor::init()
             MORPH_CROSS, Size(ERODE_KSIZE, ERODE_KSIZE));
     V_element_dilate = cv::getStructuringElement(
             MORPH_CROSS, Size(DILATE_KSIZE, DILATE_KSIZE));
+    if(DRAW)
+    {
+        cv::namedWindow("None",1);
+    }
+    if(DRAW & SHOW_DRAW)
+    {
+        cout << "Show draw!" << endl;
+        cv::namedWindow("draw",1);
+    }
+    if(DRAW & SHOW_GRAY)
+    {
+        cout << "Show gray!" << endl;
+        cv::namedWindow("gray",1);
+    }
+    if(DRAW & SHOW_LIGHT_REGION)
+    {
+        cout << "Show light region" << endl;
+        cv::namedWindow("light region",1);
+    }
 }
 
 void Armor::feedImage(cv::Mat& src)
 {
-    if(DRAW == SHOW_ALL)
+    if(DRAW & SHOW_DRAW)
         light_draw = src.clone();
     cleanAll();
     getSrcSize(src);
@@ -67,6 +86,11 @@ void Armor::cvtGray(cv::Mat& src)
     cv::cvtColor(src, gray, CV_BGR2GRAY);
     cv::equalizeHist(gray, gray);
     cv::threshold(gray, gray, CIRCLE_THRESHOLD, U8_MAX, THRESH_BINARY);
+    if(DRAW & SHOW_GRAY)
+    {
+        cv::imshow("gray", gray);
+        cv::createTrackbar("THRESHOLD", "gray", &CIRCLE_THRESHOLD, U8_MAX);
+    }
 }
 void Armor::getLightRegion()
 {
@@ -77,31 +101,13 @@ void Armor::getLightRegion()
     bitwise_and(s_low, v_very_high, v_very_high);
     cv::erode(v_very_high, v_very_high, V_element_erode);
     cv::dilate(v_very_high, v_very_high, V_element_dilate);
-    if(DRAW == SHOW_ALL)
+    if(DRAW & SHOW_LIGHT_REGION)
     {
-        cv::namedWindow("light region",1);
         cv::imshow("light region", v_very_high);
         //cv::imshow("S region", s_low);
         cv::createTrackbar("V_THRESHOLD", "light region", &V_THRESHOLD, U8_MAX);
         cv::createTrackbar("S_THRESHOLD", "light region", &S_THRESHOLD, U8_MAX);
-        cv::waitKey(1);
     }
-}
-
-void Armor::getLightRegion2()
-{
-    cv::Canny(hsvSplit[S_INDEX], hsvSplit[S_INDEX], 400, 1000);
-    cv::threshold(hsvSplit[V_INDEX], hsvSplit[V_INDEX],
-            V_THRESHOLD, U8_MAX, THRESH_BINARY);
-    cv::dilate(hsvSplit[V_INDEX], hsvSplit[V_INDEX], V_element_dilate);
-    bitwise_and(hsvSplit[S_INDEX], hsvSplit[V_INDEX], hsvSplit[V_INDEX]);
-    if(DRAW == SHOW_ALL)
-    {
-        cv::namedWindow("light region",1);
-        cv::imshow("light region", hsvSplit[V_INDEX]);
-        cv::waitKey(1);
-    }
-
 }
 
 void Armor::selectContours()
@@ -117,7 +123,7 @@ void Armor::selectContours()
                 continue;
             pushLights();
 
-            if(DRAW == SHOW_ALL)
+            if(DRAW & SHOW_DRAW)
                 drawLights();
         }
 }
@@ -196,10 +202,7 @@ void Armor::drawLights()
     for (int j = 0; j < 4; ++j)
         line(light_draw, vertices[j], vertices[(j + 1) % 4], Scalar(0, 255, 0), 2);
 
-    cv::namedWindow("draw", 1); 
     cv::imshow("draw", light_draw);
-    cv::waitKey(1);
-
 }
 
 void Armor::selectLights()
@@ -221,7 +224,7 @@ void Armor::selectLights()
                 double distance = sqrt((pi.x - pj.x) * (pi.x - pj.x) + (pi.y - pj.y) * (pi.y - pj.y));
                 
                 CIRCLE_ROI_WIDTH = (int)distance;
-                CIRCLE_ROI_HEIGHT = (int)ai * 1.5;
+                CIRCLE_ROI_HEIGHT = (int)ai * 2.5;
                 CIRCLE_AREA_THRESH_MAX = PI * distance * distance;
                 CIRCLE_AREA_THRESH_MIN = PI * distance * distance / 4;
                 //灯条距离合适
@@ -247,7 +250,7 @@ void Armor::selectLights()
         }
     }
     chooseCloseTarget();
-    if(DRAW == SHOW_ALL)
+    if(DRAW & SHOW_DRAW)
     {
         //for (int i=0;i<(int)armors.size();i++)
         {
@@ -259,7 +262,7 @@ void Armor::selectLights()
         cv::createTrackbar("S_BLUE_THRESHOLD", "draw", &S_BLUE_THRESHOLD, U8_MAX);
         cv::createTrackbar("BLUE_PIXEL_RATIO_THRESHOLD", "draw", &BLUE_PIXEL_RATIO_THRESHOLD, 100);
 
-        cv::waitKey(1);
+        //cv::waitKey(1);
     }
 }
 
@@ -304,10 +307,7 @@ bool Armor::isCircleAround(int midx, int midy)
                 midy - CIRCLE_ROI_HEIGHT/2,
                 CIRCLE_ROI_WIDTH, CIRCLE_ROI_HEIGHT));
     vector<vector<Point> > gray_contours;
-    /*
     cv::imshow("roi", roi_circle);
-    cv::waitKey(0);
-    */
     cv::findContours(roi_circle.clone(), gray_contours, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE);
     for(int i= 0; i < (int)gray_contours.size(); i++)
     {
@@ -330,7 +330,7 @@ bool Armor::isCircleAround(int midx, int midy)
             //cout << "Circle:" << r << endl;
         if(r > 0.7)
         {
-            if(DRAW == SHOW_ALL)
+            if(DRAW & SHOW_DRAW)
                 cv::circle(light_draw, center, radius, Scalar(0, 255, 255), 2);
             armors.push_back(center);
             return true;
@@ -361,7 +361,7 @@ int Armor::getTargetY()
     return target.y;
 }
 
-void Armor::setDraw(bool is_draw)
+void Armor::setDraw(int is_draw)
 {
     DRAW = is_draw;
 }

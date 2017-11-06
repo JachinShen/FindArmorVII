@@ -12,18 +12,18 @@ using namespace std;
 int main(void)
 {
     //cv::VideoCapture cap(1);
-    cv::VideoCapture cap("/home/jachinshen/视频/Robo/BlueArmor2.avi"); 
-    Mat src;
+    cv::VideoCapture cap("/home/jachinshen/视频/Robo/train.avi"); 
+    cv::Mat src;
     Armor armor;
     cv::namedWindow("frame", 1); 
     cap.read(src);
     imshow("frame", src);
-    waitKey(0);
+    cv::waitKey(1);
 
     Serial serial;
 
+    armor.setDraw(SHOW_ALL);
     armor.init();
-    armor.setDraw(true);
     serial.init();
     while(cap.read(src))	
     {
@@ -31,11 +31,11 @@ int main(void)
         /*
         cout << "x:" << armor.getTargetX()
             << " y:" << armor.getTargetY() << endl;
-        serial.sendTarget(armor.getTargetX(), armor.getTargetY());
         */
+        serial.sendTarget(armor.getTargetX(), armor.getTargetY());
 
         imshow("frame", src);
-        waitKey(0);
+        cv::waitKey(0);
     }
     cap.release();
 }

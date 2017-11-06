@@ -7,7 +7,10 @@ using namespace cv;
 #include <vector>
 using namespace std;
 
-#define SHOW_ALL 1
+#define SHOW_ALL SHOW_GRAY|SHOW_LIGHT_REGION|SHOW_DRAW
+#define SHOW_DRAW 0x04
+#define SHOW_GRAY 0x02
+#define SHOW_LIGHT_REGION 0x01
 #define NO_SHOW 0
 #define PI 3.1415926535898
 #define V_INDEX 2
@@ -41,7 +44,7 @@ class Armor
         int CIRCLE_THRESHOLD;
         int CIRCLE_AREA_THRESH_MAX;
         int CIRCLE_AREA_THRESH_MIN;
-        bool DRAW;
+        int DRAW;
         
 
     private:
@@ -69,7 +72,6 @@ class Armor
         void cvtHSV(cv::Mat& src);
         void cvtGray(cv::Mat& src);
         void getLightRegion();
-        void getLightRegion2();
         void selectContours();
         bool isAreaTooBigOrSmall(int i);
         void getRotatedRect(int i);
@@ -89,7 +91,7 @@ class Armor
         bool isFound();
         int getTargetX();
         int getTargetY();
-        void setDraw(bool is_draw);
+        void setDraw(int is_draw);
 };
 
 
