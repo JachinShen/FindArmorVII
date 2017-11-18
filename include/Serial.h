@@ -147,7 +147,8 @@ void Serial::sendTarget(int target_x,int target_y)
     buf[5] = converted_y & 0xFF;
     buf[6] = 0xA7;
     for(int i=0; i<7; ++i)
-        cout << hex << (unsigned int) (unsigned char)buf[i] << endl;
+        cout << hex << (unsigned int) (unsigned char)buf[i] << " ";
+    cout << endl;
 
 #if PLATFORM == MANIFOLD
     //读串口30字节到buf

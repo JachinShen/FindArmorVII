@@ -18,12 +18,12 @@ int main(void)
     cv::namedWindow("frame", 1); 
     cap.read(src);
     imshow("frame", src);
-    cv::waitKey(1);
+    cv::waitKey(0);
 
     Serial serial;
 
     armor.setDraw(SHOW_ALL);
-    armor.init();
+    armor.init(src);
     serial.init();
     while(cap.read(src))	
     {
@@ -35,7 +35,7 @@ int main(void)
         serial.sendTarget(armor.getTargetX(), armor.getTargetY());
 
         imshow("frame", src);
-        cv::waitKey(0);
+        cv::waitKey(1);
     }
     cap.release();
 }
