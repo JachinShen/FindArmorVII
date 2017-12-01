@@ -1,3 +1,11 @@
+#define MANIFOLD 1
+#define PC 0
+//#if defined (__amd64__) || ( __amd64) ||(__x86_64__) || (__x86_64) ||(i386) ||(__i386) ||(__i386__)
+#if defined __arm__
+#define PLATFORM MANIFOLD
+#else
+#define PLATFORM PC
+#endif
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -50,17 +58,17 @@ class Armor
         int CIRCLE_AREA_THRESH_MIN;
         int DRAW;
         bool is_last_found;
-        double fps;
+        //double fps;
 
     private:
-        cv::Mat hsv;
+        //cv::Mat hsv;
         cv::Mat s_low;
         cv::Mat s_canny;
         cv::Mat v_very_high;
-        cv::Mat gray;
+        //cv::Mat gray;
         cv::Mat light_draw;
 
-        std::vector<cv::Mat > hsvSplit;
+        //std::vector<cv::Mat > hsvSplit;
         std::vector<cv::RotatedRect> lights;
         std::vector<cv::Point2f > armors;
         std::vector<std::vector<cv::Point > > V_contours;
@@ -72,25 +80,25 @@ class Armor
         cv::Point target;
 
     private:
-        void getSrcSize(cv::Mat& src);
-        void cvtHSV(cv::Mat& src);
-        void cvtGray(cv::Mat& src);
-        void getLightRegion();
-        void selectContours();
-        bool isAreaTooBigOrSmall(std::vector<cv::Point>& contour);
+        void cvtHSV(const cv::Mat& src, std::vector<cv::Mat >& hsvSplit);
+        void cvtGray(const cv::Mat& src, cv::Mat& gray);
+        void getLightRegion(std::vector<cv::Mat >& hsvSplit);
+        void selectContours(std::vector<cv::Mat >& hsvSplit);
+        bool isBlueNearby(std::vector<cv::Mat >& hsvSplit, std::vector<cv::Point>& contour);
+        void selectLights(const cv::Mat& src);
+        bool isCircleAround(cv::Mat& gray, int midx, int midy);
+        void findCircleAround(const cv::Mat& src);
         bool isCloseToBorder(cv::RotatedRect& rotated_rect);
-        bool isBlueNearby(std::vector<cv::Point>& contour);
-        void selectLights();
+        bool isAreaTooBigOrSmall(std::vector<cv::Point>& contour);
+        void getSrcSize(const cv::Mat& src);
         void chooseCloseTarget();
-        bool isCircleAround(int midx, int midy);
         void cleanAll();
-        void findCircleAround(cv::Mat& src);
         double tic();
 
     public:
         Armor();
-        void init(cv::Mat& src);
-        void feedImage(cv::Mat& src);
+        void init(const cv::Mat& src);
+        void feedImage(const cv::Mat& src);
         bool isFound();
         int getTargetX();
         int getTargetY();

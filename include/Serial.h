@@ -26,7 +26,7 @@ class Serial
         int set_opt(int, int, int, char, int);
     public:
         void init();
-        void sendTarget(int, int);
+        void sendTarget(int, int, bool);
 };
 
 int Serial::set_opt(int fd,int nSpeed, int nBits, char nEvent, int nStop)  
@@ -114,11 +114,11 @@ int Serial::set_opt(int fd,int nSpeed, int nBits, char nEvent, int nStop)
 void Serial::init()
 {
 #if PLATFORM == MANIFOLD
-	fd= open("/dev/ttyTHS3", O_RDWR | O_NOCTTY | O_NDELAY);  //妙算串口设备描述符看说明书，这个应该就是
+	fd= open("/dev/ttyTHS2", O_RDWR | O_NOCTTY | O_NDELAY);  //妙算串口设备描述符看说明书，这个应该就是
 #endif
 }
 
-void Serial::sendTarget(int target_x,int target_y)
+void Serial::sendTarget(int target_x,int target_y, bool is_found)
 {
 
 #if PLATFORM == MANIFOLD
@@ -142,7 +142,10 @@ void Serial::sendTarget(int target_x,int target_y)
     buf[0] = 0xA5;
     buf[1] = (converted_x >> 8) & 0xFF;
     buf[2] = converted_x & 0xFF;
-    buf[3] = 0xA6;
+    if(is_found)
+        buf[3] = 0xA6;
+    else
+        buf[3] = 0xA4;
     buf[4] = (converted_y >> 8) & 0xFF;
     buf[5] = converted_y & 0xFF;
     buf[6] = 0xA7;
