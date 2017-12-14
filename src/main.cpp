@@ -11,13 +11,13 @@ using namespace std;
 
 int main(void)
 {
-    cv::VideoCapture cap(0);
-    //cv::VideoCapture cap("/home/jachinshen/视频/Robo/train.avi"); 
+    cv::VideoCapture cap(1);
+    //cv::VideoCapture cap("/home/jachinshen/视频/MArmor.avi"); 
     cv::Mat src;
     Armor armor;
     cv::namedWindow("frame", 1); 
     cap.read(src);
-    imshow("frame", src);
+    cv::imshow("frame", src);
     cv::waitKey(0);
 
     Serial serial;
@@ -32,7 +32,7 @@ int main(void)
             //<< " y:" << armor.getTargetY() << endl;
         serial.sendTarget(armor.getTargetX(), armor.getTargetY(), armor.isFound());
 
-        imshow("frame", src);
+        cv::imshow("frame", src);
         cv::waitKey(1);
     }
     cap.release();
