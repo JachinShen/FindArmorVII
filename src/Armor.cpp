@@ -1,35 +1,6 @@
 #include "Armor.h"
 
-Armor::Armor():
-    AREA_MAX(200),
-    AREA_MIN(25),
-    ERODE_KSIZE(2),
-    DILATE_KSIZE(4),
-    V_THRESHOLD(230),
-    S_THRESHOLD(40),
-    BORDER_THRESHOLD(10),
-    H_BLUE_LOW_THRESHOLD(120),
-    H_BLUE_LOW_THRESHOLD_MIN(100),
-    H_BLUE_LOW_THRESHOLD_MAX(140),
-    H_BLUE_HIGH_THRESHOLD(180),
-    H_BLUE_HIGH_THRESHOLD_MAX(200),
-    H_BLUE_HIGH_THRESHOLD_MIN(160),
-    H_BLUE_STEP(1),
-    H_BLUE_CHANGE_THRESHOLD_LOW(5),
-    H_BLUE_CHANGE_THRESHOLD_HIGH(10),
-    S_BLUE_THRESHOLD(100),
-    BLUE_PIXEL_RATIO_THRESHOLD(12),
-    CIRCLE_ROI_WIDTH(40),
-    CIRCLE_ROI_HEIGHT(40),
-    CIRCLE_THRESHOLD(130),
-    CIRCLE_AREA_THRESH_MAX(1000),
-    CIRCLE_AREA_THRESH_MIN(30),
-    DRAW(NO_SHOW),
-    is_last_found(false),
-    refresh_ctr(1),
-    target(cv::Point(320,240))
-{
-}
+Armor::Armor() { }
 
 void Armor::init(const cv::Mat& src)
 {
@@ -51,8 +22,6 @@ void Armor::init(const cv::Mat& src)
     H_BLUE_CHANGE_THRESHOLD_HIGH = 10;
     S_BLUE_THRESHOLD = 100;
     BLUE_PIXEL_RATIO_THRESHOLD = 12;
-    CIRCLE_ROI_WIDTH = 320;
-    CIRCLE_ROI_HEIGHT = 240;
     CIRCLE_THRESHOLD = 130;
     CIRCLE_AREA_THRESH_MAX = 3000;
     CIRCLE_AREA_THRESH_MIN = 100;
@@ -64,6 +33,8 @@ void Armor::init(const cv::Mat& src)
     V_element_dilate = cv::getStructuringElement(
             cv::MORPH_RECT, cv::Size(DILATE_KSIZE, DILATE_KSIZE));
     getSrcSize(src);
+    CIRCLE_ROI_WIDTH = srcW;
+    CIRCLE_ROI_HEIGHT = srcH;
     if(DRAW & SHOW_DRAW)
     {
         cout << "Show draw!" << endl;
@@ -391,13 +362,13 @@ void Armor::setDraw(int is_draw)
 void Armor::findCircleAround(const cv::Mat& src)
 {
     int rect_x = target.x - CIRCLE_ROI_WIDTH / 2;
-    rect_x = rect_x > 0 ? rect_x : 0;
+    rect_x = rect_x > 0 ? rect_x : 1;
     int rect_y = target.y - CIRCLE_ROI_HEIGHT / 2;
-    rect_y = rect_y > 0 ? rect_y : 0;
+    rect_y = rect_y > 0 ? rect_y : 1;
     int rect_w = target.x + CIRCLE_ROI_WIDTH / 2;
-    rect_w = rect_w > srcW ? (rect_w - srcW) : CIRCLE_ROI_WIDTH;
+    rect_w = rect_w > srcW ? (rect_w - srcW) : CIRCLE_ROI_WIDTH - 1;
     int rect_h = target.y + CIRCLE_ROI_HEIGHT / 2;
-    rect_h = rect_h > srcH ? (rect_h - srcH) : CIRCLE_ROI_HEIGHT;
+    rect_h = rect_h > srcH ? (rect_h - srcH) : CIRCLE_ROI_HEIGHT - 1;
     cv::Mat roi_possible_circle = 
         src( cv::Rect( rect_x, rect_y, rect_w, rect_h)); 
 
@@ -437,17 +408,17 @@ void Armor::findCircleAround(const cv::Mat& src)
         circleArea= PI * radius * radius;
         r= area / circleArea;
             //cout << "Circle:" << r << endl;
-        if(r > 0.8)
+        if(r > 0.7)
         {
             //CIRCLE_AREA_THRESH_MAX = circleArea * 5;
             //CIRCLE_AREA_THRESH_MIN = circleArea / 3;
             //cout << "Max:" << CIRCLE_AREA_THRESH_MAX;
             //cout << "Min:" << CIRCLE_AREA_THRESH_MIN;
-            if (center.x < CIRCLE_ROI_WIDTH 
-                    || center.x > srcW - CIRCLE_ROI_WIDTH
-                    || center.y < CIRCLE_ROI_HEIGHT
-                    || center.y > srcH - CIRCLE_ROI_HEIGHT)
-                continue;
+            //if (center.x < CIRCLE_ROI_WIDTH / 3
+                    //|| center.x > srcW - CIRCLE_ROI_WIDTH / 3
+                    //|| center.y < CIRCLE_ROI_HEIGHT / 3
+                    //|| center.y > srcH - CIRCLE_ROI_HEIGHT / 3)
+                //continue;
             CIRCLE_ROI_WIDTH = radius * 8;
             CIRCLE_ROI_HEIGHT = radius * 4;
             target = center;
@@ -465,8 +436,9 @@ void Armor::findCircleAround(const cv::Mat& src)
             return;
         }
     }
-    CIRCLE_ROI_WIDTH = 320;
-    CIRCLE_ROI_HEIGHT = 240;
+    CIRCLE_ROI_WIDTH = srcW;
+    CIRCLE_ROI_HEIGHT = srcH;
+    target = cv::Point(320, 240);
     is_last_found = false;
 }
 
